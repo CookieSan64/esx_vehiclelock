@@ -1,0 +1,135 @@
+ESX = nil
+
+local isRunningWorkaround = false
+
+Citizen.CreateThread(function()
+	while ESX == nil do
+		TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+		Citizen.Wait(0)
+	end
+end)
+
+function StartWorkaroundTask()
+	if isRunningWorkaround then
+		return
+	end
+
+	local timer = 0
+	local playerPed = PlayerPedId()
+	isRunningWorkaround = true
+
+	while timer < 100 do
+		Citizen.Wait(0)
+		timer = timer + 1
+
+		local vehicle = GetVehiclePedIsTryingToEnter(playerPed)
+
+		if DoesEntityExist(vehicle) then
+			local lockStatus = GetVehicleDoorLockStatus(vehicle)
+
+			if lockStatus == 4 then
+				ClearPedTasks(playerPed)
+			end
+		end
+	end
+
+	isRunningWorkaround = false
+end
+
+function ToggleVehicleLock()
+	local playerPed = PlayerPedId()
+	local coords = GetEntityCoords(playerPed)
+	local vehicle
+
+	Citizen.CreateThread(function()
+		StartWorkaroundTask()
+	end)
+
+	if IsPedInAnyVehicle(playerPed, false) then
+		vehicle = GetVehiclePedIsIn(playerPed, false)
+	else
+		vehicle = GetClosestVehicle(coords, 8.0, 0, 71)
+	end
+
+	if not DoesEntityExist(vehicle) then
+		return
+	end
+
+	ESX.TriggerServerCallback('esx_vehiclelock:requestPlayerCars', function(isOwnedVehicle)
+
+		if isOwnedVehicle then
+			local lockStatus = GetVehicleDoorLockStatus(vehicle)
+			
+			if lockStatus == 1 then -- unlocked
+				lockAnimation()
+				exports['mythic_notify']:SendAlert('Error', 'Locked'..' '(GetVehicleNumberPlateText(vehicle)))
+                SetVehicleLights(vehicle, 2)
+                Wait(250)
+                SetVehicleLights(vehicle, 0)
+				Wait(250)
+				SetVehicleLights(vehicle, 2)
+				Wait(250)
+				SetVehicleLights(vehicle, 0)
+				StartVehicleHorn (vehicle, 4)
+				PlayVehicleDoorCloseSound(vehicle, 1)
+				SetVehicleDoorsLocked(vehicle, 2)
+				
+			elseif lockStatus == 2 then -- locked
+				lockAnimation()
+				exports['mythic_notify']:SendAlert('Success', 'Unlocked'..' '(GetVehicleNumberPlateText(vehicle)))
+                SetVehicleLights(vehicle, 2)
+                Wait(250)
+                SetVehicleLights(vehicle, 0)
+				Wait(250)
+				SetVehicleLights(vehicle, 2)
+				Wait(250)
+				SetVehicleLights(vehicle, 0)
+				StartVehicleHorn (vehicle, 4)
+				PlayVehicleDoorOpenSound(vehicle, 0)
+				SetVehicleDoorsLocked(vehicle, 1)
+
+			end
+		end
+
+	end, ESX.Math.Trim(GetVehicleNumberPlateText(vehicle)))
+end
+
+function lockAnimation()
+    local ply = PlayerPedId()
+    RequestAnimDict("anim@heists@keycard@")
+    while not HasAnimDictLoaded("anim@heists@keycard@") do
+        Wait(0)
+    end
+    TaskPlayAnim(ply, "anim@heists@keycard@", "exit", 8.0, 1.0, -1, 16, 0, 0, 0, 0)
+    Wait(600)
+    ClearPedTasks(ply)
+end
+
+Citizen.CreateThread(function()
+	while true do
+		Citizen.Wait(0)
+
+		if IsControlJustReleased(0, 303) and IsInputDisabled(0) then
+			ToggleVehicleLock()
+			Citizen.Wait(300)
+	
+		-- D-pad down on controllers works, too!
+		elseif IsControlJustReleased(0, 173) and not IsInputDisabled(0) then
+			ToggleVehicleLock()
+			Citizen.Wait(300)
+		end
+	end
+end)
+
+function OpenGarageVehList(garage)
+	local playerPed = GetPlayerPed(-1)
+	local elements = {}
+	ESX.TriggerServerCallback('t1ger_garage:fetchVehicles', function(vehList)
+		for k,v in pairs(vehList) do
+			local vehHash 	= v.vehicle.model
+			local vehName 	= GetDisplayNameFromVehicleModel(vehHash)
+			local vehLabel 	= GetLabelText(vehName)
+			table.insert(elements,{label = vehLabel.." ["..v.plate.."]", name = vehLabel, value = v, plate = v.plate, fuel = v.fuel, vehicle = v.vehicle})
+		end
+	end)
+end
